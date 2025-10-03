@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
     char lexemes[100][20]; // Assuming max 100 lexemes, each up to 19 chars + null terminator
     char tokens[100];
     int t = 0;
+    char message[20];
     for (int k=0; k<i; k++) {
         switch (info[k]) {
             case '+':
@@ -124,11 +125,6 @@ int main(int argc, char* argv[]) {
             case '/':
                 tokens[t] = slashsym;
                 strcpy(lexemes[t], "/");
-                t++;
-                break;
-            case '=':
-                tokens[t] = eqsym;
-                strcpy(lexemes[t], "=");
                 t++;
                 break;
             case '<':
@@ -196,9 +192,17 @@ int main(int argc, char* argv[]) {
                     t++;
                     k++; // Skip the next character as it's part of the token
                 } else {
-                    printf("Error: Invalid symbol ':'\n");
+                    tokens[t] = skipsym;
                     strcpy(lexemes[t], ":");
+                    strcpy(message, "Invalid symbol");
+                    t++;
+
                 }
+                break;
+            case '=':
+                tokens[t] = eqsym;
+                strcpy(lexemes[t], "=");
+                t++;
                 break;
             case 'b':
                 if (info[k+1] == 'e' && info[k+2] == 'g' && info[k+3] == 'i' && info[k+4] == 'n') {
@@ -364,6 +368,7 @@ int main(int argc, char* argv[]) {
                     strncpy(lexemes[t], &info[start], len);
                     lexemes[t][len] = '\0'; // Null-terminate the string
                     if (len > 5) {
+                        strcpy(message, "Number too long");
                         tokens[t] = skipsym;
                         t++;
                     }   else {
@@ -373,25 +378,38 @@ int main(int argc, char* argv[]) {
                     k--; // Adjust for the outer loop increment
                 } else if (isalpha(info[k])) {
                     int start = k;
-                    int len = 1;
-//                    while (isalnum(info[k])) { // Accept letters and digits
-//                        strncat(lexemes[t], &info[k], 1);
-//                        k++;
-//                        len++;
-//                    }
+                    int len = 0;
+                    while (isalnum(info[k]) && len < 12) { // Max 5 digits
+                        strncat(lexemes[t], &info[k], len);
+                        k++;
+                        len++;
+                    }
                     strncpy(lexemes[t], &info[start], len);
                     lexemes[t][len] = '\0'; // Null-terminate the string
-                    tokens[t] = identsym;
-                    t++;
+                    if (len > 11) {
+                        strcpy(message, "Identifier too long");
+                        tokens[t] = skipsym;
+                        t++;
+                    }   else {
+                        tokens[t] = identsym;
+                        t++;
+                    }
                 } else {
                     strcpy(lexemes[t], &info[k]);
+                    strcpy(message, "Invalid symbols");
                     lexemes[t][1] = '\0';
                     tokens[t] = skipsym;
                     t++;
                 }
                 break;
         }
-        printf("%s %8d\n", lexemes[t-1], tokens[t-1]);
+        
+        if (tokens[t-1] == skipsym) {
+            printf("%-7s %-10s\n", lexemes[t-1], message);
+        } else {
+            // Print lexeme and token type
+            printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+        }
     }
 
     printf("\nToken List:\n\n");
