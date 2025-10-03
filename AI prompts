@@ -1,0 +1,1338 @@
+My prompt: case ',':
+                tokens[t] = commasym;
+                strcpy(lexemes[t], ",");
+                t++;
+                break;
+            case ';':
+                tokens[t] = semicolonsym;
+                strcpy(lexemes[t], ";");
+                t++;
+                break;
+            case '.':
+                tokens[t] = periodsym;
+                strcpy(lexemes[t], ".");
+                t++;
+                break; I have a problem with this code, for the ";" case and the "." case, it is printing an unecessary extra blank line below it. The comma doesn't have that issue. Is there any difference in the code?
+ChatGPT said:
+
+Looking at the three case blocks you posted:
+
+case ',':
+    tokens[t] = commasym;
+    strcpy(lexemes[t], ",");
+    t++;
+    break;
+
+case ';':
+    tokens[t] = semicolonsym;
+    strcpy(lexemes[t], ";");
+    t++;
+    break;
+
+case '.':
+    tokens[t] = periodsym;
+    strcpy(lexemes[t], ".");
+    t++;
+    break;
+
+
+There’s no functional difference between them — all three do the same thing (assign a token, copy a string, increment t). So the extra blank line you’re seeing when printing cannot be caused by the switch snippet itself.
+
+The difference is likely happening in your printing logic, not in tokenization. A few common culprits:
+
+Newline in lexeme array
+When you later printf("%s\n", lexemes[i]);, if lexemes[i] accidentally has a newline "\n" inside it, you’ll get two newlines.
+
+For example: if lexemes[i] is actually ";\n\0" instead of ";\0".
+
+That would print ; followed by a newline from the string itself, plus another newline from your printf.
+
+Memory overwrite
+If lexemes[t] wasn’t properly zeroed or allocated with enough space, strcpy could be leaving junk characters (like '\n') after the ; or ..
+
+Different print format
+Maybe in your loop you do something like:
+
+printf("%s\n", lexemes[i]);  // always adds a newline
+
+
+If lexemes[i] already contains a trailing newline, you’d see an extra blank line.
+
+✅ How to test quickly
+Instead of printf("%s\n", lexemes[i]);, try:
+
+printf("[%s]\n", lexemes[i]);
+
+
+If you see "[;]" but still get a blank line, then the extra newline is coming from your printf.
+If you see "[; ]" or "[;\n]", then you know your string actually contains an embedded newline.
+
+👉 My guess: your lexemes[t] for ; and . somehow have a newline character inside (probably from how you’re reading the input before the switch).
+
+Do you want me to help you trace exactly how those characters are read into your lexer?
+
+You said:
+both semicolon and begin have a [ under them now
+ChatGPT said:
+
+Got it 👍 — so when you switched to
+
+printf("[%s]\n", lexemes[i]);
+
+
+you saw:
+
+[,]
+[;]
+[begin]
+
+
+but under ; and begin you’re also seeing another [ on a separate blank line. That means the string for ; and begin actually contains an extra newline character inside the lexeme, so it prints once for ; (or begin), then immediately starts a new line before printing the ].
+
+Why this happens
+
+When you read characters from the source, you’re probably pulling them in with something like fgetc, fgets, or scanf("%s", ...).
+
+fgets in particular keeps the newline ('\n') if there’s room in the buffer.
+
+So if you copied that into lexemes[t], it would store ";\n\0" instead of just ";\0".
+
+That’s why printf("[%s]\n", lexemes[i]); shows:
+
+[;         <--- semicolon
+]          <--- newline inside string forced the closing bracket to print on the next line
+
+How to fix it
+
+Before you use or store the string, strip out the newline. Common ways:
+
+1. Manually trim after reading:
+
+// after fgets or similar
+lexemes[t][strcspn(lexemes[t], "\n")] = '\0';
+
+
+2. If you’re building lexemes char by char:
+Make sure you never copy '\n' into them — skip over whitespace when tokenizing.
+
+Quick test
+
+Print the raw characters one by one to confirm:
+
+for (int j = 0; lexemes[i][j] != '\0'; j++) {
+    printf("%d ", lexemes[i][j]);
+}
+printf("\n");
+
+
+If you see 59 10 for semicolon (ASCII 59 = ;, ASCII 10 = newline), that’s the culprit.
+
+👉 Do you want me to help you patch the part of your lexer that builds lexemes[t] so it strips out newlines before storing?
+
+You said:
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+typedef enum {
+    skipsym = 1 , // Skip / ignore token
+    identsym , // Identifier
+    numbersym , // Number
+    plussym , // +
+    minussym , // -
+    multsym , // *
+    slashsym , // /
+    eqsym , // =
+    neqsym , // <>
+    lessym , // <
+    leqsym , // <=
+    gtrsym , // >
+    geqsym , // >=
+    lparentsym , // (
+    rparentsym , // )
+    commasym , // ,
+    semicolonsym , // ;
+    periodsym , // .
+    becomessym , // :=
+    beginsym , // begin
+    endsym , // end
+    ifsym , // if
+    fisym , // fi
+    thensym , // then
+    whilesym , // while
+    dosym , // do
+    callsym , // call
+    constsym , // const
+    varsym , // var
+    procsym , // procedure
+    writesym , // write
+    readsym , // read
+    elsesym , // else
+    evensym // even
+} TokenType ;
+
+int main(int argc, char* argv[]) {
+    /*
+    Pseudocode for Lexical Analyzer
+    Step 1. Initialize keywords, operators, and delimiters
+    Step 2. Read the source code file
+        a. Skip comments
+            i. Skip single-line comments (//)
+            ii. Skip multi-line comments (/*)
+        b. Skip whitespace
+            i. Spaces
+            ii. Tabs
+            iii. Newlines
+    Step 3. Tokenize the source code's keywords, operators, and delimiters
+    Step 4. Identify and classify tokens
+    Step 5. Handle errors
+        a. Identifier too long (> 11 chars) Error
+        b. Number too long (> 5 digits) Error
+        c. Invalid Symbol Error
+    Step 6. Output the tokens
+        Step 6.1. Print Lexeme Table to console
+        Step 6.2. Print Token List to console
+    Step 7. Terminate
+    */
+    FILE *inputFile = fopen(argv[1], "r");
+
+    // Check if input file opened successfully
+    if (!inputFile) {
+        printf("Error opening file.\n");
+        return 1;
+    }
+
+    char info[100];
+    int i = 0;
+    int j = 0;
+
+    // Print header
+
+    printf("Source Program:\n");
+
+    // Print input file contents
+    while (fgets(info, sizeof(info), inputFile)) {
+        printf("%s", info);
+    }
+
+    fseek(inputFile, 0, SEEK_SET);
+
+    // Print Lexeme Table header
+
+    printf("\nLexeme Table:\n");
+    printf("\nlexeme\ttoken type\n");
+
+    // Scan input file character by character excluding whitespace
+    while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+        if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n' || (char) j == '\0') {
+            continue; // Skip whitespace
+            i++;
+        }
+        info[i++] = (char) j;
+    }
+
+    info[i] = '\0'; // Null-terminate the string
+
+    char lexemes[100][20]; // Assuming max 100 lexemes, each up to 19 chars + null terminator
+    char tokens[100];
+    int t = 0;
+    for (int k=0; k<i; k++) {
+        switch (info[k]) {
+            case '+':
+                tokens[t] = plussym;
+                strcpy(lexemes[t], "+");
+                t++;
+                break;
+            case '-':
+                tokens[t] = minussym;
+                strcpy(lexemes[t], "-");
+                t++;
+                break;
+            case '*':
+                tokens[t] = multsym;
+                strcpy(lexemes[t], "*");
+                t++;
+                break;
+            case '/':
+                tokens[t] = slashsym;
+                strcpy(lexemes[t], "/");
+                t++;
+                break;
+            case '=':
+                tokens[t] = eqsym;
+                strcpy(lexemes[t], "=");
+                t++;
+                break;
+            case '<':
+                switch (info[k+1]) {
+                    case '=':
+                        tokens[t] = leqsym;
+                        strcpy(lexemes[t], "<=");
+                        t++;
+                        k++; // Skip the next character as it's part of the token
+                        break;
+                    case '>':
+                        tokens[t] = neqsym;
+                        strcpy(lexemes[t], "<>");
+                        t++;
+                        k++; // Skip the next character as it's part of the token
+                        break;
+                    default:
+                        tokens[t] = lessym;
+                        strcpy(lexemes[t], "<");
+                        t++;
+                        break;
+                }
+                break;
+            case '>':
+                if (info[k+1] == '=') {
+                    tokens[t] = geqsym;
+                    strcpy(lexemes[t], ">=");
+                    t++;
+                    k++; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = gtrsym;
+                    strcpy(lexemes[t], ">");
+                    t++;
+                }
+                break;
+            case '(':
+                tokens[t] = lparentsym;
+                strcpy(lexemes[t], "(");
+                t++;
+                break;
+            case ')':
+                tokens[t] = rparentsym;
+                strcpy(lexemes[t], ")");
+                t++;
+                break;
+            case ',':
+                tokens[t] = commasym;
+                strcpy(lexemes[t], ",");
+                t++;
+                break;
+            case ';':
+                tokens[t] = semicolonsym;
+                strcpy(lexemes[t], ";");
+                t++;
+                break;
+            case '.':
+                tokens[t] = periodsym;
+                strcpy(lexemes[t], ".");
+                t++;
+                break;
+            case ':':
+                if (info[k+1] == '=') {
+                    tokens[t] = becomessym;
+                    strcpy(lexemes[t], ":=");
+                    t++;
+                    k++; // Skip the next character as it's part of the token
+                } else {
+                    printf("Error: Invalid symbol ':'\n");
+                    strcpy(lexemes[t], ":");
+                }
+                break;
+            case 'b':
+                if (info[k+1] == 'e' && info[k+2] == 'g' && info[k+3] == 'i' && info[k+4] == 'n') {
+                    tokens[t] = beginsym;
+                    strcpy(lexemes[t], "begin");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "b");
+                    t++;
+                }
+                break;
+            case 'e':
+                if (info[k+1] == 'n' && info[k+2] == 'd') {
+                    tokens[t] = endsym;
+                    strcpy(lexemes[t], "end");
+                    t++;
+                    k += 2; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'l' && info[k+2] == 's' && info[k+3] == 'e') {
+                    tokens[t] = elsesym;
+                    strcpy(lexemes[t], "else");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'v' && info[k+2] == 'e' && info[k+3] == 'n') {
+                    tokens[t] = evensym;
+                    strcpy(lexemes[t], "even");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "e");
+                    t++;
+                }
+                break;
+            case 'i':
+                if (info[k+1] == 'f') {
+                    tokens[t] = ifsym;
+                    strcpy(lexemes[t], "if");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "i");
+                    t++;
+                }
+                break;
+            case 'f':
+                if (info[k+1] == 'i') {
+                    tokens[t] = fisym;
+                    strcpy(lexemes[t], "fi");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "f");
+                    t++;
+                }
+                break;
+            case 't':
+                if (info[k+1] == 'h' && info[k+2] == 'e' && info[k+3] == 'n') {
+                    tokens[t] = thensym;
+                    strcpy(lexemes[t], "then");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "t");
+                    t++;
+                }
+                break;
+            case 'w':
+                if (info[k+1] == 'h' && info[k+2] == 'i' && info[k+3] == 'l' && info[k+4] == 'e') {
+                    tokens[t] = whilesym;
+                    strcpy(lexemes[t], "while");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'r' && info[k+2] == 'i' && info[k+3] == 't' && info[k+4] == 'e') {
+                    tokens[t] = writesym;
+                    strcpy(lexemes[t], "write");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "w");
+                    t++;
+                }
+                break;
+            case 'd':
+                if (info[k+1] == 'o') {
+                    tokens[t] = dosym;
+                    strcpy(lexemes[t], "do");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "d");
+                    t++;
+                }
+                break;
+            case 'c':
+                if (info[k+1] == 'a' && info[k+2] == 'l' && info[k+3] == 'l') {
+                    tokens[t] = callsym;
+                    strcpy(lexemes[t], "call");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'o' && info[k+2] == 'n' && info[k+3] == 's' && info[k+4] == 't') {
+                    tokens[t] = constsym;
+                    strcpy(lexemes[t], "const");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "c");
+                    t++;
+                }
+                break;
+            case 'v':
+                if (info[k+1] == 'a' && info[k+2] == 'r') {
+                    tokens[t] = varsym;
+                    strcpy(lexemes[t], "var");
+                    t++;
+                    k += 2; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "v");
+                    t++;
+                }
+                break;
+            case 'p':
+                if (info[k+1] == 'r' && info[k+2] == 'o' && info[k+3] == 'c' && info[k+4] == 'e' && info[k+5] == 'd' && info[k+6] == 'u' && info[k+7] == 'r' && info[k+8] == 'e') {
+                    tokens[t] = procsym;
+                    strcpy(lexemes[t], "procedure");
+                    t++;
+                    k += 8; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "p");
+                    t++;
+                }
+                break;
+            case 'r':
+                if (info[k+1] == 'e' && info[k+2] == 'a' && info[k+3] == 'd') {
+                    tokens[t] = readsym;
+                    strcpy(lexemes[t], "read");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "r");
+                    t++;
+                }
+                break;
+            default:
+                if (isdigit(info[k])) {
+                    int start = k;
+                    int len = 0;
+                    while (isdigit(info[k]) && len < 6) { // Max 5 digits
+                        strncat(lexemes[t], &info[k], 1);
+                        k++;
+                        len++;
+                    }
+                    strncpy(lexemes[t], &info[start], len);
+                    lexemes[t][len] = '\0'; // Null-terminate the string
+                    if (len > 5) {
+                        tokens[t] = skipsym;
+                        t++;
+                    }   else {
+                        tokens[t] = numbersym;
+                        t++;
+                    }
+                    k--; // Adjust for the outer loop increment
+                } else if (isalpha(info[k])) {
+                    int start = k;
+                    int len = 1;
+//                    while (isalnum(info[k])) { // Accept letters and digits
+//                        strncat(lexemes[t], &info[k], 1);
+//                        k++;
+//                        len++;
+//                    }
+                    strncpy(lexemes[t], &info[start], len);
+                    lexemes[t][len] = '\0'; // Null-terminate the string
+                    tokens[t] = identsym;
+                    t++;
+                } else {
+                    strcpy(lexemes[t], &info[k]);
+                    lexemes[t][1] = '\0';
+                    tokens[t] = skipsym;
+                    t++;
+                }
+                break;
+        }
+        printf("%s %8d\n", lexemes[t-1], tokens[t-1]);
+    }
+
+    printf("\nToken List:\n\n");
+
+    for (int l = 0; l < t; l++) {
+        printf("%d ", tokens[l]);
+        if (tokens[l] == 2 || tokens[l] == 3) {
+            printf("%s ", lexemes[l]);
+        }
+    }
+
+    fclose(inputFile);
+
+    return 0;
+} the problem is with the begin and ; cases, every other case prints fine
+ChatGPT said:
+
+Thanks for pasting the full code — that makes the issue much clearer 👌
+
+The problem isn’t actually in the ; case or the begin case themselves (they’re coded fine). The extra blank line you see when printing is because of how you’re filling info[] and then how you print lexemes.
+
+Let’s walk through it carefully:
+
+🔎 Where the bug comes from
+
+In your scanner loop:
+
+while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+    if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n' || (char) j == '\0') {
+        continue; // Skip whitespace
+        i++;
+    }
+    info[i++] = (char) j;
+}
+
+
+Notice two problems:
+
+That i++ after continue never executes because it’s after continue.
+→ So your indexing isn’t lining up correctly. Sometimes you overwrite previous characters with \n or stray data.
+
+fgets at the beginning already left newline characters \n in your info buffer when you first printed the source. Since you didn’t filter them all out properly, those newlines sneak into info[].
+
+So when you hit "begin" or ";", you’re sometimes actually storing:
+
+"begin\n"
+";\n"
+
+
+instead of just "begin" and ";". That’s why the debug print with [%s] showed the bracket on the next line.
+
+✅ Fix
+
+Move i++ outside of the continue block and make sure you don’t copy whitespace:
+
+while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+    if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n')
+        continue; // Skip whitespace completely
+
+    info[i++] = (char) j;
+}
+info[i] = '\0';
+
+
+That way, info[] contains only meaningful characters (no stray newlines).
+
+🛠️ Extra debugging tip
+
+To prove it’s newlines in your lexemes, print their ASCII values:
+
+printf("%s %8d  [", lexemes[t-1], tokens[t-1]);
+for (int z = 0; lexemes[t-1][z] != '\0'; z++) {
+    printf("%d ", (unsigned char)lexemes[t-1][z]);
+}
+printf("]\n");
+
+
+If you see 59 10 → that’s ; (ASCII 59) followed by \n (ASCII 10).
+If you see 98 101 103 105 110 10 → that’s "begin\n".
+
+👉 Do you want me to patch your code fully so begin, ;, and all keywords/tokens are guaranteed not to carry extra \n characters?
+
+You said:
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+typedef enum {
+    skipsym = 1 , // Skip / ignore token
+    identsym , // Identifier
+    numbersym , // Number
+    plussym , // +
+    minussym , // -
+    multsym , // *
+    slashsym , // /
+    eqsym , // =
+    neqsym , // <>
+    lessym , // <
+    leqsym , // <=
+    gtrsym , // >
+    geqsym , // >=
+    lparentsym , // (
+    rparentsym , // )
+    commasym , // ,
+    semicolonsym , // ;
+    periodsym , // .
+    becomessym , // :=
+    beginsym , // begin
+    endsym , // end
+    ifsym , // if
+    fisym , // fi
+    thensym , // then
+    whilesym , // while
+    dosym , // do
+    callsym , // call
+    constsym , // const
+    varsym , // var
+    procsym , // procedure
+    writesym , // write
+    readsym , // read
+    elsesym , // else
+    evensym // even
+} TokenType ;
+
+int main(int argc, char* argv[]) {
+    /*
+    Pseudocode for Lexical Analyzer
+    Step 1. Initialize keywords, operators, and delimiters
+    Step 2. Read the source code file
+        a. Skip comments
+            i. Skip single-line comments (//)
+            ii. Skip multi-line comments (/*)
+        b. Skip whitespace
+            i. Spaces
+            ii. Tabs
+            iii. Newlines
+    Step 3. Tokenize the source code's keywords, operators, and delimiters
+    Step 4. Identify and classify tokens
+    Step 5. Handle errors
+        a. Identifier too long (> 11 chars) Error
+        b. Number too long (> 5 digits) Error
+        c. Invalid Symbol Error
+    Step 6. Output the tokens
+        Step 6.1. Print Lexeme Table to console
+        Step 6.2. Print Token List to console
+    Step 7. Terminate
+    */
+    FILE *inputFile = fopen(argv[1], "r");
+
+    // Check if input file opened successfully
+    if (!inputFile) {
+        printf("Error opening file.\n");
+        return 1;
+    }
+
+    char info[100];
+    int i = 0;
+    int j = 0;
+
+    // Print header
+
+    printf("Source Program:\n");
+
+    // Print input file contents
+    while (fgets(info, sizeof(info), inputFile)) {
+        printf("%s", info);
+    }
+
+    fseek(inputFile, 0, SEEK_SET);
+
+    // Print Lexeme Table header
+
+    printf("\nLexeme Table:\n");
+    printf("\nlexeme\ttoken type\n");
+
+    // Scan input file character by character excluding whitespace
+    while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+        if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n') {
+            continue; // Skip whitespace
+            
+        }
+        info[i++] = (char) j;
+    }
+
+    info[i] = '\0'; // Null-terminate the string
+    
+    char lexemes[100][20]; // Assuming max 100 lexemes, each up to 19 chars + null terminator
+    char tokens[100];
+    int t = 0;
+    char message[20];
+    for (int k=0; k<i; k++) {
+        switch (info[k]) {
+            case '+':
+                tokens[t] = plussym;
+                strcpy(lexemes[t], "+");
+                t++;
+                break;
+            case '-':
+                tokens[t] = minussym;
+                strcpy(lexemes[t], "-");
+                t++;
+                break;
+            case '*':
+                tokens[t] = multsym;
+                strcpy(lexemes[t], "*");
+                t++;
+                break;
+            case '/':
+                tokens[t] = slashsym;
+                strcpy(lexemes[t], "/");
+                t++;
+                break;
+            case '<':
+                switch (info[k+1]) {
+                    case '=':
+                        tokens[t] = leqsym;
+                        strcpy(lexemes[t], "<=");
+                        t++;
+                        k++; // Skip the next character as it's part of the token
+                        break;
+                    case '>':
+                        tokens[t] = neqsym;
+                        strcpy(lexemes[t], "<>");
+                        t++;
+                        k++; // Skip the next character as it's part of the token
+                        break;
+                    default:
+                        tokens[t] = lessym;
+                        strcpy(lexemes[t], "<");
+                        t++;
+                        break;
+                }
+                break;
+            case '>':
+                if (info[k+1] == '=') {
+                    tokens[t] = geqsym;
+                    strcpy(lexemes[t], ">=");
+                    t++;
+                    k++; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = gtrsym;
+                    strcpy(lexemes[t], ">");
+                    t++;
+                }
+                break;
+            case '(':
+                tokens[t] = lparentsym;
+                strcpy(lexemes[t], "(");
+                t++;
+                break;
+            case ')':
+                tokens[t] = rparentsym;
+                strcpy(lexemes[t], ")");
+                t++;
+                break;
+            case ',':
+                tokens[t] = commasym;
+                strcpy(lexemes[t], ",");
+                t++;
+                break;
+            case ';':
+                tokens[t] = semicolonsym;
+                strcpy(lexemes[t], ";");
+                t++;
+                break;
+            case '.':
+                tokens[t] = periodsym;
+                strcpy(lexemes[t], ".");
+                t++;
+                break;
+            case ':':
+                if (info[k+1] == '=') {
+                    tokens[t] = becomessym;
+                    strcpy(lexemes[t], ":=");
+                    t++;
+                    k++; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = skipsym;
+                    strcpy(lexemes[t], ":");
+                    strcpy(message, "Invalid symbol");
+                    t++;
+
+                }
+                break;
+            case '=':
+                tokens[t] = eqsym;
+                strcpy(lexemes[t], "=");
+                t++;
+                break;
+            case 'b':
+                if (info[k+1] == 'e' && info[k+2] == 'g' && info[k+3] == 'i' && info[k+4] == 'n') {
+                    tokens[t] = beginsym;
+                    strcpy(lexemes[t], "begin");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "b");
+                    t++;
+                }
+                break;
+            case 'e':
+                if (info[k+1] == 'n' && info[k+2] == 'd') {
+                    tokens[t] = endsym;
+                    strcpy(lexemes[t], "end");
+                    t++;
+                    k += 2; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'l' && info[k+2] == 's' && info[k+3] == 'e') {
+                    tokens[t] = elsesym;
+                    strcpy(lexemes[t], "else");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'v' && info[k+2] == 'e' && info[k+3] == 'n') {
+                    tokens[t] = evensym;
+                    strcpy(lexemes[t], "even");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "e");
+                    t++;
+                }
+                break;
+            case 'i':
+                if (info[k+1] == 'f') {
+                    tokens[t] = ifsym;
+                    strcpy(lexemes[t], "if");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "i");
+                    t++;
+                }
+                break;
+            case 'f':
+                if (info[k+1] == 'i') {
+                    tokens[t] = fisym;
+                    strcpy(lexemes[t], "fi");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "f");
+                    t++;
+                }
+                break;
+            case 't':
+                if (info[k+1] == 'h' && info[k+2] == 'e' && info[k+3] == 'n') {
+                    tokens[t] = thensym;
+                    strcpy(lexemes[t], "then");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "t");
+                    t++;
+                }
+                break;
+            case 'w':
+                if (info[k+1] == 'h' && info[k+2] == 'i' && info[k+3] == 'l' && info[k+4] == 'e') {
+                    tokens[t] = whilesym;
+                    strcpy(lexemes[t], "while");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'r' && info[k+2] == 'i' && info[k+3] == 't' && info[k+4] == 'e') {
+                    tokens[t] = writesym;
+                    strcpy(lexemes[t], "write");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "w");
+                    t++;
+                }
+                break;
+            case 'd':
+                if (info[k+1] == 'o') {
+                    tokens[t] = dosym;
+                    strcpy(lexemes[t], "do");
+                    t++;
+                    k += 1; // Skip the next character as it's part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "d");
+                    t++;
+                }
+                break;
+            case 'c':
+                if (info[k+1] == 'a' && info[k+2] == 'l' && info[k+3] == 'l') {
+                    tokens[t] = callsym;
+                    strcpy(lexemes[t], "call");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else if (info[k+1] == 'o' && info[k+2] == 'n' && info[k+3] == 's' && info[k+4] == 't') {
+                    tokens[t] = constsym;
+                    strcpy(lexemes[t], "const");
+                    t++;
+                    k += 4; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "c");
+                    t++;
+                }
+                break;
+            case 'v':
+                if (info[k+1] == 'a' && info[k+2] == 'r') {
+                    tokens[t] = varsym;
+                    strcpy(lexemes[t], "var");
+                    t++;
+                    k += 2; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "v");
+                    t++;
+                }
+                break;
+            case 'p':
+                if (info[k+1] == 'r' && info[k+2] == 'o' && info[k+3] == 'c' && info[k+4] == 'e' && info[k+5] == 'd' && info[k+6] == 'u' && info[k+7] == 'r' && info[k+8] == 'e') {
+                    tokens[t] = procsym;
+                    strcpy(lexemes[t], "procedure");
+                    t++;
+                    k += 8; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "p");
+                    t++;
+                }
+                break;
+            case 'r':
+                if (info[k+1] == 'e' && info[k+2] == 'a' && info[k+3] == 'd') {
+                    tokens[t] = readsym;
+                    strcpy(lexemes[t], "read");
+                    t++;
+                    k += 3; // Skip the next characters as they're part of the token
+                } else {
+                    tokens[t] = identsym; // Assume it's an identifier
+                    strcpy(lexemes[t], "r");
+                    t++;
+                }
+                break;
+            default:
+                if (isdigit(info[k])) {
+                    int start = k;
+                    int len = 0;
+                    while (isdigit(info[k]) && len < 6) { // Max 5 digits
+                        strncat(lexemes[t], &info[k], 1);
+                        k++;
+                        len++;
+                    }
+                    strncpy(lexemes[t], &info[start], len);
+                    lexemes[t][len] = '\0'; // Null-terminate the string
+                    if (len > 5) {
+                        strcpy(message, "Number too long");
+                        tokens[t] = skipsym;
+                        t++;
+                    }   else {
+                        tokens[t] = numbersym;
+                        t++;
+                    }
+                    k--; // Adjust for the outer loop increment
+                } else if (isalpha(info[k])) {
+                    int start = k;
+                    int len = 0;
+                    while (isalnum(info[k]) && len < 12) { // Max 5 digits
+                        strncat(lexemes[t], &info[k], len);
+                        k++;
+                        len++;
+                    }
+                    strncpy(lexemes[t], &info[start], len);
+                    lexemes[t][len] = '\0'; // Null-terminate the string
+                    if (len > 11) {
+                        strcpy(message, "Identifier too long");
+                        tokens[t] = skipsym;
+                        t++;
+                    }   else {
+                        tokens[t] = identsym;
+                        t++;
+                    }
+                } else {
+                    strcpy(lexemes[t], &info[k]);
+                    strcpy(message, "Invalid symbols");
+                    lexemes[t][1] = '\0';
+                    tokens[t] = skipsym;
+                    t++;
+                }
+                break;
+        }
+        
+        if (tokens[t-1] == skipsym) {
+            printf("%-7s %-10s\n", lexemes[t-1], message);
+        } else {
+            // Print lexeme and token type
+            printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+        }
+    }
+    
+    printf("\nToken List:\n\n");
+
+    for (int l = 0; l < t; l++) {
+        printf("%d ", tokens[l]);
+        if (tokens[l] == 2 || tokens[l] == 3) {
+            printf("%s ", lexemes[l]);
+        }
+    }
+
+    fclose(inputFile);
+
+    return 0;
+} I have this code now, and there's a few problems. For starters, the comma and semicolon arent being read at all. And theres still whitespace being read as an invalid symbol. Is there any way I can fix it?
+ChatGPT said:
+
+Got it 👍 thanks for posting the full code.
+
+I can see two root issues with your current scanner:
+
+Whitespace is still getting stored in info[] and treated as tokens later
+
+Your comma (',') and semicolon (';') cases are fine in the switch, but they aren’t being reached because of how you’re filling info[].
+
+Let me break it down.
+
+Problem 1: Whitespace still sneaks in
+
+Right now you have:
+
+while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+    if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n') {
+        continue; // Skip whitespace
+    }
+    info[i++] = (char) j;
+}
+
+
+That looks correct, but notice what happens:
+
+continue; skips storing the whitespace but does not increment i, which is fine.
+
+Later, when you tokenize, you have cases like default: which do:
+
+strcpy(lexemes[t], &info[k]);
+lexemes[t][1] = '\0';
+tokens[t] = skipsym;
+t++;
+
+
+That strcpy(lexemes[t], &info[k]); is dangerous. It copies everything from info[k] onward until a null terminator. If info[k] was skipped whitespace or an unexpected character, you get junk tokens.
+
+✅ Fix:
+Instead of copying whole tails of strings, only copy the single character:
+
+lexemes[t][0] = info[k];
+lexemes[t][1] = '\0';
+
+
+That way, you don’t accidentally slurp whitespace or multiple characters.
+
+Problem 2: Comma and semicolon not recognized
+
+Your switch has:
+
+case ',':
+    tokens[t] = commasym;
+    strcpy(lexemes[t], ",");
+    t++;
+    break;
+case ';':
+    tokens[t] = semicolonsym;
+    strcpy(lexemes[t], ";");
+    t++;
+    break;
+
+
+That’s perfect.
+The issue is that in your later default: block, you sometimes advance k incorrectly (e.g., inside identifier/number loops). That can cause the parser to skip over commas and semicolons in info[].
+
+✅ Fix:
+
+Make sure identifier and number loops stop before punctuation.
+
+Right now, this part is wrong:
+
+while (isalnum(info[k]) && len < 12) { 
+    strncat(lexemes[t], &info[k], len);
+    k++;
+    len++;
+}
+
+
+👉 strncat(..., len) is incorrect — it appends len characters, not one. You should just append 1 character:
+
+while (isalnum(info[k]) && len < 11) { 
+    lexemes[t][len++] = info[k++];
+}
+lexemes[t][len] = '\0';
+
+
+This ensures identifiers don’t “eat” commas, semicolons, or periods that follow them.
+
+Minimal changes you should make
+
+Fix default: invalid symbol handling:
+
+lexemes[t][0] = info[k];
+lexemes[t][1] = '\0';
+tokens[t] = skipsym;
+t++;
+
+
+Fix identifier building loop:
+
+else if (isalpha(info[k])) {
+    int start = k;
+    int len = 0;
+    while (isalnum(info[k]) && len < 11) {
+        lexemes[t][len++] = info[k++];
+    }
+    lexemes[t][len] = '\0';
+    if (len > 11) {
+        strcpy(message, "Identifier too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = identsym;
+    }
+    t++;
+    k--; // adjust because outer loop will increment k
+}
+
+
+Do the same fix for number-building loop.
+
+✅ End result
+
+After these fixes:
+
+Whitespace won’t appear as "invalid symbols."
+
+Comma , and semicolon ; will be tokenized normally.
+
+Identifiers and numbers won’t swallow punctuation.
+
+Do you want me to patch your code directly with these fixes so you can test it right away, or do you prefer I just point out the lines to replace?
+
+You said:
+the commas and semicolons are being read properly, but now the spacing issue is even wierder. Now weird characters are being displayed on top of the empty space
+ChatGPT said:
+
+Ah — I see what’s happening. The “weird characters” showing up in place of spaces are most likely caused by two things in your current code:
+
+Uninitialized arrays
+In char lexemes[100][20];, each lexemes[t] slot is not cleared before you start strcpy/strncat into it. That means leftover garbage from memory is getting printed.
+
+Using strncat incorrectly
+When building identifiers/numbers, you’re doing strncat(lexemes[t], &info[k], len); where len isn’t the right parameter. strncat expects the number of characters to copy, but you’re passing len (which grows with the loop). That appends more than intended and corrupts the string.
+
+🔧 Fix
+
+Here’s how to clean it up:
+
+(a) Zero‐initialize each lexeme slot before writing to it
+memset(lexemes[t], 0, sizeof(lexemes[t]));
+
+
+Do this before you strcpy/strncat into lexemes[t].
+
+(b) Don’t use strncat in that loop
+
+Instead, just copy one character at a time:
+
+int start = k;
+int len = 0;
+while (isdigit(info[k]) && len < 5) {
+    lexemes[t][len++] = info[k++];
+}
+lexemes[t][len] = '\0'; // terminate
+
+
+Do the same for identifiers:
+
+int start = k;
+int len = 0;
+while (isalnum(info[k]) && len < 11) {
+    lexemes[t][len++] = info[k++];
+}
+lexemes[t][len] = '\0';
+
+
+This way, you don’t accidentally grab whitespace or random memory.
+
+✅ Corrected snippet for numbers
+if (isdigit(info[k])) {
+    int len = 0;
+    memset(lexemes[t], 0, sizeof(lexemes[t]));
+    while (isdigit(info[k]) && len < 5) {
+        lexemes[t][len++] = info[k++];
+    }
+    lexemes[t][len] = '\0';
+
+    if (len > 5) {
+        strcpy(message, "Number too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = numbersym;
+    }
+    t++;
+    k--; // adjust
+}
+
+✅ Corrected snippet for identifiers
+else if (isalpha(info[k])) {
+    int len = 0;
+    memset(lexemes[t], 0, sizeof(lexemes[t]));
+    while (isalnum(info[k]) && len < 11) {
+        lexemes[t][len++] = info[k++];
+    }
+    lexemes[t][len] = '\0';
+
+    if (len > 11) {
+        strcpy(message, "Identifier too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = identsym;
+    }
+    t++;
+    k--; // adjust
+}
+
+
+This will fix the “junk characters” issue because:
+
+Every token string is freshly initialized.
+
+You’re not accidentally copying past the buffer with strncat.
+
+Whitespace is skipped properly and never ends up in a token.
+
+👉 Do you want me to rewrite the whole switch loop cleanly with these fixes applied so you can drop it in directly?
+
+You said:
+I implemented those changes, and the weird characters are gone. But the spaces after the semicolon and begin are still there
+ChatGPT said:
+
+Got it 👍
+
+The “spaces” you’re still seeing after ; or begin aren’t actually being tokenized — they’re just still sitting in your info buffer because of how you read and store the file contents:
+
+Right now you do this:
+
+while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
+    if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n') {
+        continue; // Skip whitespace
+    }
+    info[i++] = (char) j;
+}
+
+
+That looks fine, but here’s the subtle problem:
+
+You’re skipping whitespace when you copy into info[], but not when you tokenize.
+
+In your switch, anything that doesn’t match a known token falls into the default case, which still tries to copy info[k] into a token string — that includes leftover invisible characters, carriage returns (\r from Windows files), or even null padding.
+
+✅ Fix #1: Filter whitespace + carriage returns during tokenization too
+
+At the top of your for-loop over info[k], add:
+
+if (info[k] == ' ' || info[k] == '\t' || info[k] == '\n' || info[k] == '\r') {
+    continue;
+}
+
+
+That guarantees whitespace never reaches your token logic.
+
+✅ Fix #2: Trim lexeme strings before printing
+
+Sometimes lexemes can accidentally pick up a trailing space. Add a helper:
+
+void trim(char *s) {
+    int len = strlen(s);
+    while (len > 0 && isspace((unsigned char)s[len - 1])) {
+        s[--len] = '\0';
+    }
+}
+
+
+And just before printing:
+
+trim(lexemes[t-1]);
+printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+
+✅ Fix #3: Handle Windows line endings
+
+If your file was saved with Windows line endings (\r\n), then the \r sneaks in. That’s why you’re seeing “ghost spaces” after keywords. Filtering \r as shown in Fix #1 eliminates this.
+
+So the minimal change that should solve your current issue is:
+
+if (info[k] == ' ' || info[k] == '\t' || info[k] == '\n' || info[k] == '\r') {
+    continue;
+}
+
+
+inside your tokenization loop.
+
+👉 Do you want me to patch your full switch loop with this change already integrated so you can just drop it in?
+
+You said:
+that first one did it, thank you
+ChatGPT said:
+
+Perfect 🎉 glad that nailed it. The stray spaces were just those sneaky \r carriage returns hiding in your input. Filtering them out is the cleanest fix.
+
+Do you want me to also help tighten up your lexer loop so keywords/identifiers/numbers are built more systematically (instead of all those manual case 'b': ... checks), or are you good with the current structure for now?
