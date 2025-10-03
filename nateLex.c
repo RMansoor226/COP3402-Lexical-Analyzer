@@ -363,17 +363,16 @@ int main(int argc, char* argv[]) {
                 if (isdigit(info[k])) {
     int len = 0;
     memset(lexemes[t], 0, sizeof(lexemes[t]));
-    while (isdigit(info[k]) && len < 5) {
+    while (isdigit(info[k])) {
         lexemes[t][len++] = info[k++];
     }
-    lexemes[t][len] = '\0';
-
     if (len > 5) {
         strcpy(message, "Number too long");
         tokens[t] = skipsym;
     } else {
         tokens[t] = numbersym;
     }
+    lexemes[t][len] = '\0';
     t++;
     k--; // adjust
 }
