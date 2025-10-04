@@ -1487,3 +1487,375 @@ Error fires if len > 5.
 No weird double increment.
 
 👉 Do you want me to also show the identifier case fixed in the same style (so it catches abcdefabcdef as "Identifier too long")? That way both number and identifier handling are consistent.
+
+My prompt: How do I open and read a text file properly?
+
+Github Copilot said: 
+
+To open and read a text file in C, use the fopen, fgets or fscanf, and fclose functions. Here’s a simple example that reads and prints each line from input.txt:
+
+#include <stdio.h>
+
+int main() {
+    FILE *file = fopen("input.txt", "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        printf("%s", line);
+    }
+
+    fclose(file);
+    return 0;
+}
+
+My prompt: Why is the while loop not reading the entire input.txt file?
+
+Github Copilot said: 
+
+The issue is with the condition in your while loop:
+while (!fgets(info, sizeof(info), inputFile))
+This loop only runs when fgets returns NULL (i.e., when it fails), so it never reads the file contents.
+
+Fix:
+Change the condition to run while fgets successfully reads a line:
+
+while (fgets(info, sizeof(info), inputFile)) {
+    printf("%s", info);
+}
+
+My prompt: Why is the while loop only storing the last line's information
+
+Github Copilot said: 
+
+The `info` array is overwritten on each iteration of the `while` loop, so after the loop ends, it only contains the last line read from the file. If you want to store all lines, you need to use a 2D array or dynamically allocate memory for each line.
+
+**Example using a 2D array:**
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char* argv[]) {
+    FILE *inputFile = fopen(argv[1], "r");
+    if (!inputFile) {
+        printf("Error opening file.\n");
+        return 1;
+    }
+
+    char lines[100][1000]; // Store up to 100 lines, each up to 999 chars
+    int count = 0;
+    while (fgets(lines[count], sizeof(lines[count]), inputFile) && count < 100) {
+        count++;
+    }
+
+    // Print all lines
+    for (int i = 0; i < count; i++) {
+        printf("%s", lines[i]);
+    }
+
+    fclose(inputFile);
+    return 0;
+}
+```
+
+This way, each line is stored separately and not overwritten.
+
+My prompt: What is causing the last for loop to not print any tokens?
+
+Github Copilot said: 
+
+The last `for` loop is not printing any tokens because the file pointer is at the end of the file after the first `while (fgets(...))` loop. When you try to read the file again with `fgetc(inputFile)`, it immediately returns `EOF`, so `info` remains mostly empty, and the tokenization logic does not process any real input.
+
+**Fix:**  
+After printing the file contents, you need to reset the file pointer to the beginning using `fseek(inputFile, 0, SEEK_SET);` before reading the file again.
+
+**Example:**
+```c
+// After printing the file contents
+fseek(inputFile, 0, SEEK_SET);
+```
+
+Add this line before the second loop that reads characters with `fgetc`. This will allow your tokenization logic to process the file content as intended.
+
+My prompt: How do I make lexemes hold strings?
+
+Github Copilot said: To make `lexemes` hold strings, ensure each entry is a character array (which you already have: `char lexemes[100][20];`).  
+When storing a lexeme, use `strcpy` to copy the string into the array instead of assigning characters one by one.
+
+**Example:**  
+To store the string `"begin"` as a lexeme:
+```c
+#include <string.h>
+
+// Store "begin" in lexemes[t]
+strcpy(lexemes[t], "begin");
+```
+
+Use `strcpy(lexemes[t], "your_lexeme");` whenever you want to store a string lexeme.  
+This will correctly store the entire string in the `lexemes` array.
+
+My prompt: Can you modify the lex.c file's final for loop's switch case statement to add the token name to the lexeme array? Do not add the token name, add the entire name constructed by the characters read in the file. For example, if "begin" is read, do not add "beginsym", instead add "begin"
+
+Github Copilot said: 
+To store the full lexeme (e.g., "begin") in the `lexemes` array, use `strncpy` or `sprintf` to copy the entire matched string when a keyword or identifier is recognized.  
+Currently, only the first character is set, and the rest are set manually.  
+Below is a brief fix for the `begin` case (apply similarly to other keywords):
+
+```c
+// For "begin"
+if (info[k+1] == 'e' && info[k+2] == 'g' && info[k+3] == 'i' && info[k+4] == 'n') {
+    tokens[t] = beginsym;
+    strncpy(lexemes[t], &info[k], 5); // Copy "begin"
+    lexemes[t][5] = '\0';
+    t++;
+    k += 4;
+}
+```
+
+For identifiers, numbers, and other keywords, use a loop or `strncpy` to copy the full lexeme as you recognize it.  
+This ensures `lexemes[t]` contains the actual string from the file, not just the token name.
+
+My prompt: Why does the program end in a runtime error?
+
+Github Copilot said: 
+
+The program ends in a runtime error (exit code -1073741819 / 0xC0000005) because of an **out-of-bounds array access** in the final for loop.  
+Specifically, in the `default` case, you increment `t` before calling `strcpy(lexemes[t], (const char *) info[k]);`, so you write to an uninitialized or invalid index of `lexemes`.
+
+Also, `(const char *) info[k]` is incorrect: `info[k]` is a `char`, not a string, so this does not copy a valid string and can cause undefined behavior.
+
+**How to fix:**
+- Only increment `t` after all assignments to `lexemes[t]` and `tokens[t]`.
+- To copy a single character as a string, use:
+  ```c
+  lexemes[t][0] = info[k];
+  lexemes[t][1] = '\0';
+  ```
+- Make sure all `strcpy`/`strncpy` calls use valid, null-terminated strings.
+
+**Summary:**  
+The runtime error is due to writing outside the bounds of the `lexemes` array and using invalid string operations.
+
+My prompt: How do I print the lexemes alongside the token number properly?
+
+Github Copilot said: 
+
+To print lexemes with their token numbers correctly, print each `lexemes[t]` and `tokens[t]` **immediately after** you assign them, and **before** incrementing `t`.  
+For single-character tokens, this is straightforward. For multi-character tokens (like keywords), ensure you copy the full lexeme string before printing.
+
+**Example fix:**
+
+```c
+// After setting lexeme and token, print, then increment t
+strcpy(lexemes[t], "+");
+tokens[t] = plussym;
+printf("%s\t%d\n", lexemes[t], tokens[t]);
+t++;
+```
+
+**For multi-character lexemes:**
+
+```c
+strncpy(lexemes[t], &info[k], 5); // e.g., for "begin"
+lexemes[t][5] = '\0';
+tokens[t] = beginsym;
+printf("%s\t%d\n", lexemes[t], tokens[t]);
+t++;
+k += 4; // Skip the rest of the keyword
+```
+
+**Summary:**  
+- Always print `lexemes[t]` and `tokens[t]` right after setting them, before incrementing `t`.
+- For single characters, set `lexemes[t][0] = info[k]; lexemes[t][1] = '\0';` if needed.
+- For multi-character lexemes, use `strncpy` and null-terminate.
+
+This ensures each lexeme is printed with its correct token number.
+
+My prompt: How do I make the check for integer values as tokens more efficient and easier to read than the current 5 nested if statements?
+
+Github Copilot said: 
+
+You can simplify the integer token check by using a loop to collect consecutive digits, then check the length for errors. This is more readable and scalable.
+
+**Example:**
+
+```c
+// Scan for a number token
+if (isdigit(info[k])) {
+    int start = k;
+    int len = 0;
+    while (isdigit(info[k]) && len < 6) { // Allow up to 6 to check for error
+        k++;
+        len++;
+    }
+    if (len > 5) {
+        printf("Error: Number too long\n");
+        // Skip the rest of the digits
+        while (isdigit(info[k])) k++;
+        k--; // Adjust for the outer loop increment
+    } else {
+        strncpy(lexemes[t], &info[start], len);
+        lexemes[t][len] = '\0';
+        tokens[t] = numbersym;
+        t++;
+        k--; // Adjust for the outer loop increment
+    }
+}
+```
+
+**Explanation:**  
+- Use a loop to count digits and build the lexeme.
+- If more than 5 digits, print an error and skip the number.
+- Otherwise, copy the digits as the lexeme and set the token.
+
+My prompt: How do I handle comments in this lexical analyzer without erasing the entire file's tokens?
+
+Github Copilot said: To handle comments in your lexical analyzer without affecting the rest of the tokens, simply **skip over comment sections** during tokenization. For example, if comments are delimited by `//` (single-line) or `/* ... */` (multi-line), detect the start of a comment and advance the index until the comment ends, ignoring all characters in between.
+
+**Example for single-line comments (`//`):**
+
+```c
+if (info[k] == '/' && info[k+1] == '/') {
+    // Skip until end of line or end of file
+    k += 2;
+    while (info[k] != '\n' && info[k] != '\0') {
+        k++;
+    }
+    // k will be incremented by the main loop
+    continue;
+}
+```
+
+**Example for multi-line comments (`/* ... */`):**
+
+```c
+if (info[k] == '/' && info[k+1] == '*') {
+    k += 2;
+    while (!(info[k] == '*' && info[k+1] == '/') && info[k] != '\0') {
+        k++;
+    }
+    if (info[k] != '\0') k += 2; // Skip past '*/'
+    continue;
+}
+```
+
+**Summary:**  
+- Detect comment start.
+- Skip all characters until the comment ends.
+- Do not generate tokens for comment content.
+- Resume normal tokenization after the comment.  
+This way, comments are ignored and do not interfere with the rest of the file's tokens.
+
+My prompt: What if I need to also tokenize the comment delimiters (e.g. //, /*, and */)?
+
+Github Copilot said: 
+
+To tokenize comment delimiters, treat them as special tokens in your analyzer. When you detect `//`, `/*`, or `*/`, add them to your `lexemes` and `tokens` arrays before skipping the comment content.
+
+**Example logic:**
+- When you see `//`, add it as a lexeme, assign a token (e.g., `commentsym`), then skip to the end of the line.
+- For `/*`, add it as a lexeme, assign a token, then skip until you find `*/`, which you also add as a lexeme and token.
+
+**Sample code:**
+```c
+if (info[k] == '/' && info[k+1] == '/') {
+    strcpy(lexemes[t], "//");
+    tokens[t] = commentsym; // Define commentsym as needed
+    printf("%s\t%d\n", lexemes[t], tokens[t]);
+    t++;
+    k += 2;
+    while (info[k] != '\n' && info[k] != '\0') k++;
+    continue;
+}
+if (info[k] == '/' && info[k+1] == '*') {
+    strcpy(lexemes[t], "/*");
+    tokens[t] = commentsym;
+    printf("%s\t%d\n", lexemes[t], tokens[t]);
+    t++;
+    k += 2;
+    while (!(info[k] == '*' && info[k+1] == '/') && info[k] != '\0') k++;
+    if (info[k] == '*' && info[k+1] == '/') {
+        strcpy(lexemes[t], "*/");
+        tokens[t] = commentsym;
+        printf("%s\t%d\n", lexemes[t], tokens[t]);
+        t++;
+        k += 2;
+    }
+    continue;
+}
+```
+**Summary:**  
+- Add comment delimiters as lexemes and assign a token.
+- Skip the comment content as before.  
+This way, the delimiters are tokenized, but the comment body is ignored.
+
+My prompt: How would I modify the current comment skipping logic to include the comment delimiters as characters in the tokens array?
+
+Github Copilot said: To include comment delimiters (`//`, `/*`, `*/`) as tokens, update your logic so that when you detect a comment delimiter, you:
+
+1. Add the delimiter to `lexemes[t]` and set the appropriate token type (e.g., `commentsym` or a new token).
+2. Print or store the delimiter token.
+3. Skip the comment content as before.
+4. For multi-line comments, also add `*/` as a token when you reach the end.
+
+**Example modification for the main tokenization loop:**
+
+```c
+// Inside your main tokenization loop
+if (info[k] == '/' && info[k+1] == '/') {
+    strcpy(lexemes[t], "//");
+    tokens[t] = skipsym; // Or define a commentsym
+    printf("%-7s %-10d\n", lexemes[t], tokens[t]);
+    t++;
+    k += 2;
+    while (info[k] != '\n' && info[k] != '\0') k++;
+    continue;
+}
+if (info[k] == '/' && info[k+1] == '*') {
+    strcpy(lexemes[t], "/*");
+    tokens[t] = skipsym; // Or define a commentsym
+    printf("%-7s %-10d\n", lexemes[t], tokens[t]);
+    t++;
+    k += 2;
+    while (!(info[k] == '*' && info[k+1] == '/') && info[k] != '\0') k++;
+    if (info[k] == '*' && info[k+1] == '/') {
+        strcpy(lexemes[t], "*/");
+        tokens[t] = skipsym; // Or define a commentsym
+        printf("%-7s %-10d\n", lexemes[t], tokens[t]);
+        t++;
+        k += 2;
+    }
+    continue;
+}
+```
+
+**Summary:**  
+- Add the delimiter as a token before skipping the comment.
+- For `/* ... */`, add both `/*` and `*/` as tokens.
+- Use a dedicated token type if desired (e.g., `commentsym`).
+
+My prompt: Why is the /* comment delimiter only having the * tokenized and the / ignored?
+
+Github Copilot said: This happens because in your file reading loop, when you detect `/*`, you add `/` and `*` as separate characters to the `info` array:
+
+```c
+info[i++] = '/';
+info[i++] = (char) j; // j is '*'
+```
+
+But in your tokenization loop, you only check for `info[k] == '/' && info[k+1] == '*'` to form the `/*` token. However, after skipping the comment, you do not ensure that both `/` and `*` are still together in the `info` array. Also, your reading loop adds `/` and `*` separately, so the tokenization loop may not always see them as a pair.
+
+**Solution:**  
+Do not add `/` and `*` to the `info` array in the reading loop.  
+Instead, only skip the comment content in the reading loop, and let the tokenization loop handle the detection and tokenization of `/*` by looking for adjacent `/` and `*` in `info`.
+
+**Summary:**  
+- Remove `info[i++] = '/';` and `info[i++] = (char) j;` from the reading loop for comments.
+- Only skip comment content in the reading loop.
+- Tokenize `/*` in the tokenization loop by checking for adjacent `/` and `*` in `info`.
+
+This will ensure `/*` is tokenized as a single delimiter.
