@@ -1,7 +1,29 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-
+/*
+Assignment :
+lex - Lexical Analyzer for PL /0
+Author : < Nathan Miriello, Rohann Mansoor >
+Language : C ( only )
+To Compile :
+gcc - O2 - std = c11 -o lex lex . c
+To Execute ( on Eustis ):
+./ lex < input file >
+where :
+< input file > is the path to the PL /0 source program
+Notes :
+- Implement a lexical analyser for the PL /0 language .
+- The program must detect errors such as
+- numbers longer than five digits
+- identifiers longer than eleven characters
+- invalid characters .
+- The output format must exactly match the specification .
+- Tested on Eustis .
+Class : COP 3402 - System Software - Fall 2025
+Instructor : Dr . Jie Lin
+Due Date : Friday , October 3 , 2025 at 11:59 PM ET
+*/
 typedef enum {
     skipsym = 1 , // Skip / ignore token
     identsym , // Identifier
