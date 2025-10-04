@@ -1336,3 +1336,154 @@ ChatGPT said:
 Perfect 🎉 glad that nailed it. The stray spaces were just those sneaky \r carriage returns hiding in your input. Filtering them out is the cleanest fix.
 
 Do you want me to also help tighten up your lexer loop so keywords/identifiers/numbers are built more systematically (instead of all those manual case 'b': ... checks), or are you good with the current structure for now?
+You said:
+int len = 0;
+    memset(lexemes[t], 0, sizeof(lexemes[t]));
+    while (isdigit(info[k]) && len < 5) {
+        lexemes[t][len++] = info[k++];
+    }
+    lexemes[t][len] = '\0';
+
+    if (len > 5) {
+        strcpy(message, "Number too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = numbersym;
+    }
+    t++;
+    k--; // adjust
+} theres one final problem with this snippet. When entering a number with length greater than 5, it needs to error and display the proper message. However, for input '123456' the code doesn't error, and displays the 3 token, how can I fix this?
+ChatGPT said:
+
+Ah, I see what’s happening 👍
+
+Your loop is written like this:
+
+while (isdigit(info[k]) && len < 5) {
+    lexemes[t][len++] = info[k++];
+}
+
+
+That condition len < 5 means the loop stops before you ever copy the 6th digit. So "123456" only copies "12345" into lexemes[t], and then the if (len > 5) check never triggers (because len == 5).
+
+✅ Fix: Let the loop run until the number really ends, then check the length
+
+Instead of limiting in the while, scan the whole number, then test its length:
+
+int start = k;
+while (isdigit(info[k])) {
+    k++;
+}
+int len = k - start;
+
+if (len > 5) {
+    strncpy(lexemes[t], &info[start], 19); // copy safely
+    lexemes[t][19] = '\0';
+    strcpy(message, "Number too long");
+    tokens[t] = skipsym;
+} else {
+    strncpy(lexemes[t], &info[start], len);
+    lexemes[t][len] = '\0';
+    tokens[t] = numbersym;
+}
+t++;
+k--; // adjust for outer loop
+
+Why this works
+
+while (isdigit(info[k])) consumes the entire number.
+
+len = k - start gives the actual digit count.
+
+If it’s over 5, flag it as error.
+
+Otherwise, copy it normally.
+
+Now for input 123456, len == 6, so you’ll correctly hit the error branch and print "Number too long".
+
+👉 Want me to also rewrite the identifier-handling part in the same clean style (instead of manually checking 'b', 'e', 'i', etc.) so it’s consistent and easier to extend?
+
+You said:
+if (isdigit(info[k])) {
+    int len = 0;
+    memset(lexemes[t], 0, sizeof(lexemes[t]));
+    while (isdigit(info[k]) && len < 5) {
+        lexemes[t][len++] = info[k++];
+        len++;
+    }
+    lexemes[t][len] = '\0';
+
+    if (len > 5) {
+        strcpy(message, "Number too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = numbersym;
+    }
+    t++;
+    k--; // adjust
+} I got the same error, heres the same code snippet, but with an updated condition at the top
+ChatGPT said:
+
+I see the issue right away 🚨
+
+In your updated snippet you accidentally increment len twice per loop:
+
+while (isdigit(info[k]) && len < 5) {
+    lexemes[t][len++] = info[k++];
+    len++;   // <-- this line is the problem
+}
+
+
+That extra len++ means for "123456" the counter goes out of sync:
+
+1st digit: len = 1, then len++ makes it 2
+
+2nd digit: len = 3
+
+3rd digit: len = 5
+
+then the condition len < 5 fails prematurely
+
+so it never sees the 6th digit at all, and never triggers the error branch.
+
+✅ Correct version
+
+Remove that second len++ entirely.
+But also, don’t cut the loop off at len < 5 if you want to catch “too long” numbers. Instead, scan all digits then check length:
+
+if (isdigit(info[k])) {
+    int start = k;
+    int len = 0;
+
+    // Scan full number
+    while (isdigit(info[k])) {
+        k++;
+        len++;
+    }
+
+    // Copy number into lexeme (truncate safely if huge)
+    strncpy(lexemes[t], &info[start], len);
+    lexemes[t][len] = '\0';
+
+    if (len > 5) {
+        strcpy(message, "Number too long");
+        tokens[t] = skipsym;
+    } else {
+        tokens[t] = numbersym;
+    }
+
+    t++;
+    k--; // adjust for outer loop increment
+}
+
+Why this works
+
+while (isdigit(info[k])) eats the entire digit sequence.
+
+len reflects the true length (123456 → len == 6).
+
+Error fires if len > 5.
+
+No weird double increment.
+
+👉 Do you want me to also show the identifier case fixed in the same style (so it catches abcdefabcdef as "Identifier too long")? That way both number and identifier handling are consistent.
