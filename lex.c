@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 
     // Print header
 
-    printf("Source Program:\n");
+    printf("Source Program:\n\n");
 
     // Print input file contents
     while (fgets(info, sizeof(info), inputFile)) {
@@ -87,16 +87,45 @@ int main(int argc, char* argv[]) {
 
     // Print Lexeme Table header
 
-    printf("\nLexeme Table:\n");
+    printf("\n\nLexeme Table:\n");
     printf("\nlexeme\ttoken type\n");
 
     // Scan input file character by character excluding whitespace
     while ((j = fgetc(inputFile)) != EOF && i < sizeof(info) - 1) {
-        if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n') {
+        if ((char) j == ' ' || (char) j == '\t' || (char) j == '\n' || (char) j == '\r') {
             continue; // Skip whitespace
-            i++;
         }
-        info[i++] = (char) j;
+        int next = fgetc(inputFile);
+        if ((char) j == '/' && next == '/') {
+            // Add single-line comment delimiter into tokens array
+            info[i++] = '/';
+            info[i++] = (char) j;
+            j = fgetc(inputFile);
+            // Skip until end of line
+            while ((char) j != '\n' && j != EOF) {
+                j = fgetc(inputFile);
+            }
+        } else if ((char) j == '/' && next == '*') {
+            // Add multi-line comment start delimiter into tokens array
+            info[i++] = '/';
+            info[i++] = '*';
+
+            // Skip until closing */
+            int prev = 0;
+            while ((j = fgetc(inputFile)) != EOF) {
+                if (prev == '*' && j == '/') {
+                    info[i++] = '*';
+                    info[i++] = '/';
+                    break;
+                }
+                prev = j;
+            }
+        } else {
+            ungetc(next, inputFile); // Put back the next character if not part of a comment
+            ungetc(j, inputFile); // Put back the character if not a comment
+            j = fgetc(inputFile); // Read the character again
+            info[i++] = (char) j;
+        }
     }
 
     info[i] = '\0'; // Null-terminate the string
@@ -106,6 +135,38 @@ int main(int argc, char* argv[]) {
     int t = 0;
     char message[20];
     for (int k=0; k<i; k++) {
+        if (info[k] == ' ' || info[k] == '\t' || info[k] == '\n' || info[k] == '\r') {
+            continue;
+        }
+
+        // Tokenize single-line comment delimiter
+        if (info[k] == '/' && info[k+1] == '/') {
+            tokens[t] = skipsym;
+            strcpy(lexemes[t], "//");
+            t++;
+            k++; // Skip the next '/'
+            printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+            continue;
+        }
+        // Tokenize multi-line comment start delimiter
+        if (info[k] == '/' && info[k+1] == '*') {
+            tokens[t] = skipsym;
+            strcpy(lexemes[t], "/*");
+            t++;
+            k++; // Skip the next '*'
+            printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+            continue;
+        }
+        // Tokenize multi-line comment end delimiter
+        if (info[k] == '*' && info[k+1] == '/') {
+            tokens[t] = skipsym;
+            strcpy(lexemes[t], "*/");
+            t++;
+            k++; // Skip the next '/'
+            printf("%-7s %-10d\n", lexemes[t-1], tokens[t-1]);
+            continue;
+        }
+
         switch (info[k]) {
             case '+':
                 tokens[t] = plussym;
@@ -358,52 +419,48 @@ int main(int argc, char* argv[]) {
                 break;
             default:
                 if (isdigit(info[k])) {
-                    int start = k;
                     int len = 0;
-                    while (isdigit(info[k]) && len < 6) { // Max 5 digits
-                        strncat(lexemes[t], &info[k], 1);
-                        k++;
-                        len++;
+                    memset(lexemes[t], 0, sizeof(lexemes[t]));
+                    while (isdigit(info[k])) {
+                        lexemes[t][len++] = info[k++];
                     }
-                    strncpy(lexemes[t], &info[start], len);
-                    lexemes[t][len] = '\0'; // Null-terminate the string
                     if (len > 5) {
                         strcpy(message, "Number too long");
                         tokens[t] = skipsym;
-                        t++;
-                    }   else {
+                    } else {
                         tokens[t] = numbersym;
-                        t++;
                     }
-                    k--; // Adjust for the outer loop increment
-                } else if (isalpha(info[k])) {
-                    int start = k;
+                    lexemes[t][len] = '\0';
+                    t++;
+                    k--; // adjust
+                }
+
+                else if (isalpha(info[k])) {
                     int len = 0;
-                    while (isalnum(info[k]) && len < 12) { // Max 5 digits
-                        strncat(lexemes[t], &info[k], len);
-                        k++;
-                        len++;
+                    memset(lexemes[t], 0, sizeof(lexemes[t]));
+                    while (isalnum(info[k]) && len < 11) {
+                        lexemes[t][len++] = info[k++];
                     }
-                    strncpy(lexemes[t], &info[start], len);
-                    lexemes[t][len] = '\0'; // Null-terminate the string
+                    lexemes[t][len] = '\0';
+
                     if (len > 11) {
                         strcpy(message, "Identifier too long");
                         tokens[t] = skipsym;
-                        t++;
-                    }   else {
+                    } else {
                         tokens[t] = identsym;
-                        t++;
                     }
-                } else {
-                    strcpy(lexemes[t], &info[k]);
-                    strcpy(message, "Invalid symbols");
+                    t++;
+                    k--; // adjust
+                }   else {
+                    lexemes[t][0] = info[k];
                     lexemes[t][1] = '\0';
+                    strcpy(message, "Invalid symbol");
                     tokens[t] = skipsym;
                     t++;
                 }
                 break;
         }
-        
+
         if (tokens[t-1] == skipsym) {
             printf("%-7s %-10s\n", lexemes[t-1], message);
         } else {
